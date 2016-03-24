@@ -1,5 +1,6 @@
 #!/usr/bin/env python
-""" A library of utility functions 
+""" A library of utility functions; 
+based on https://github.com/jingzbu/TAHTMA/blob/master/util/util.py
 """
 
 __author__ = "Jing Zhang"
