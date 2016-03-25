@@ -13,5 +13,5 @@ Email: `jzh@bu.edu`
 Homepage: http://people.bu.edu/jzh/
 
 
-Copyright 2014-2015 Jing Zhang. All rights reserved. TAHTMA is free software; you can redistribute it and/or modify it under
+Copyright 2016 Jing Zhang. All rights reserved. ROCHM is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software Foundation.
