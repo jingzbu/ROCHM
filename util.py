@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-""" A library of utility functions that will be used by Simulator
+""" A library of utility functions
 """
 from __future__ import absolute_import, division
 
