@@ -1,7 +1,7 @@
 #!/usr/bin/env python
-""" A library of utility functions; 
-based on https://github.com/jingzbu/TAHTMA/blob/master/util/util.py
+""" A library of utility functions that will be used by Simulator
 """
+from __future__ import absolute_import, division
 
 __author__ = "Jing Zhang"
 __email__ = "jingzbu@gmail.com"
@@ -13,6 +13,39 @@ from math import sqrt, log
 from matplotlib.mlab import prctile
 import statsmodels.api as sm  # recommended import according to the docs
 
+
+# Data Storage and Load
+# These two functions "zdump" and "zload" were written by Jing Wang
+# cf. https://github.com/hbhzwj/GAD/blob/master/gad/util/util.py
+
+try:
+    import cPickle as pickle
+except ImportError:
+    import pickle
+import gzip
+proto = pickle.HIGHEST_PROTOCOL
+
+def zdump(obj, f_name):
+    f = gzip.open(f_name,'wb', proto)
+    pickle.dump(obj,f)
+    f.close()
+
+def zload(f_name):
+    f = gzip.open(f_name,'rb', proto)
+    obj = pickle.load(f)
+    f.close()
+    return obj
+
+def dump(obj, f_name):
+    f = open(f_name,'wb', proto)
+    pickle.dump(obj,f)
+    f.close()
+
+def load(f_name):
+    f = open(f_name,'rb', proto)
+    obj = pickle.load(f)
+    f.close()
+    return obj
 
 def rand_x(p):
     """
@@ -27,6 +60,7 @@ def rand_x(p):
         x.append(rand_x(p))
     print x
     ----------------
+
     [1, 1, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 0]
     """
     p = np.array(p)
@@ -305,48 +339,48 @@ def Sigma_est(P, mu):
     Sigma = np.dot(np.dot(Q, D), LA.inv(Q))
     return Sigma
 
-def W_est(Sigma, SampNum):
+def U_est(Sigma, SampNum):
     """
-    Generate samples of W
+    Generate samples of the Gaussian random vector U
     ----------------
     Sigma: the covariance matrix; an N x N matrix
     SampNum: the length of the sample path
     """
     N, _ = Sigma.shape
     assert(N == _)
-    W_mean = np.zeros((1, N))
-    W = np.random.multivariate_normal(W_mean[0, :], Sigma, (1, SampNum))
+    U_mean = np.zeros((1, N))
+    U = np.random.multivariate_normal(U_mean[0, :], Sigma, (1, SampNum))
 
-    return W
+    return U
 
-def HoeffdingRuleMarkov(beta, G, H, W, FlowNum):
+def HoeffdingRuleMarkov(beta, G, H, U, FlowNum):
     """
     Estimate the K-L divergence and the threshold by use of weak convergence
     ----------------
     beta: the false alarm rate
     G: the gradient
     H: the Hessian
-    W: a sample path of the Gaussian empirical measure
+    U: a sample path of the Gaussian empirical measure
     FlowNum: the number of flows
     ----------------
     """
-    _, SampNum, _ = W.shape
+    _, SampNum, _ = U.shape
 
     # Estimate K-L divergence using 2nd-order Taylor expansion
     KL = []
     for j in range(0, SampNum):
-        t = (1.0 / sqrt(FlowNum)) * np.dot(G, W[0, j, :]) + \
+        t = (1.0 / sqrt(FlowNum)) * np.dot(G, U[0, j, :]) + \
                 (1.0 / 2) * (1.0 / FlowNum) * \
-                    np.dot(np.dot(W[0, j, :], H), W[0, j, :])
+                    np.dot(np.dot(U[0, j, :], H), U[0, j, :])
         # print t.tolist()
         # break
         KL.append(np.array(t.real)[0])
     eta = prctile(KL, 100 * (1 - beta))
     # print(KL)
     # assert(1 == 2)
-    return KL, eta
+    return eta
 
-def ChainGen(N, beta):
+def ChainGen(N):
     # Get the initial distribution mu_0
     mu_0 = mu_ini(N**2)
 
@@ -382,15 +416,15 @@ def ChainGen(N, beta):
     # Get the estimate of the covariance matrix
     Sigma_1 = Sigma_est(P_1, mu_1)
 
-    # Get an estimated sample path of W
+    # Get an estimated sample path of U
     SampNum = 1000
-    W_1 = W_est(Sigma_1, SampNum)
+    U_1 = U_est(Sigma_1, SampNum)
 
-    return mu_0, mu, mu_1, P, G_1, H_1, W_1
+    return mu_0, mu, mu_1, P, G_1, H_1, U_1
 
 
 class ThresBase(object):
-    def __init__(self, N, beta, n, mu_0, mu, mu_1, P, G_1, H_1, W_1):
+    def __init__(self, N, beta, n, mu_0, mu, mu_1, P, G_1, H_1, U_1):
         self.N = N  # N is the row dimension of the original transition matrix Q
         self.beta = beta  # beta is the false alarm rate
         self.n = n  # n is the number of samples
@@ -400,36 +434,31 @@ class ThresBase(object):
         self.P = P
         self.G_1 = G_1
         self.H_1 = H_1
-        self.W_1 = W_1
+        self.U_1 = U_1
 
 class ThresActual(ThresBase):
     """ Computing the actual (theoretical) K-L divergence and threshold
     """
     def ThresCal(self):
         SampNum = 1000
-        self.KL = []
+        KL = []
         for i in range(0, SampNum):
             x = chain(self.mu_0, self.P, self.n)
             mu = np.reshape(self.mu, (self.N, self.N))
-            self.KL.append(KL_est(x, mu))  # Get the actual relative entropy (K-L divergence)
-        self.eta = prctile(self.KL, 100 * (1 - self.beta))
-        KL = self.KL
-        eta = self.eta
-        return KL, eta
+            KL.append(KL_est(x, mu))  # Get the actual relative entropy (K-L divergence)
+        eta = prctile(self.KL, 100 * (1 - self.beta))
+        return eta
 
-class ThresWeakConv(ThresBase):
+class ThresUeakConv(ThresBase):
     """ Estimating the K-L divergence and threshold by use of weak convergence
     """
     def ThresCal(self):
-        self.KL, self.eta = HoeffdingRuleMarkov(self.beta, self.G_1, self.H_1, self.W_1, self.n)
-        KL = self.KL
-        eta = self.eta
-        return KL, eta
+        eta = HoeffdingRuleMarkov(self.beta, self.G_1, self.H_1, self.U_1, self.n)
+        return eta
 
 class ThresSanov(ThresBase):
     """ Estimating the threshold by use of Sanov's theorem
     """
     def ThresCal(self):
-        self.eta = - log(self.beta) / self.n
-        eta = self.eta
+        eta = - log(self.beta) / self.n
         return eta
