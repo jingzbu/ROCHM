@@ -5,7 +5,7 @@ Author
 =============
 Jing Zhang
 
-Jing Zhang currently is a PhD student in the Division of Systems Engineering at Boston University, advised by Professor [Yannis Paschalidis](http://ionia.bu.edu/).
+Jing Zhang currently is a PhD student in the Division of Systems Engineering at Boston University, advised by Professor [Yannis Paschalidis](http://sites.bu.edu/paschalidis/).
 
 
 Email: `jzh@bu.edu`
