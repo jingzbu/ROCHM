@@ -380,6 +380,42 @@ def HoeffdingRuleMarkov(beta, G, H, U, FlowNum):
     # assert(1 == 2)
     return eta
 
+def HoeffdingRuleMarkovRobust(beta, G_1, H_1, U_1, G_2, H_2, U_2, G_3, H_3, U_3, FlowNum):
+    """
+    Estimate the K-L divergence and the threshold by use of weak convergence
+    ----------------
+    beta: the false alarm rate
+    G: the gradient
+    H: the Hessian
+    U: a sample path of the Gaussian empirical measure
+    FlowNum: the number of flows
+    ----------------
+    """
+    _, SampNum, _ = U_1.shape
+
+    # Estimate K-L divergence using 2nd-order Taylor expansion
+    KL = []
+    for j in range(0, SampNum):
+        t_1 = (1.0 / sqrt(FlowNum)) * np.dot(G_1, U_1[0, j, :]) + \
+                (1.0 / 2) * (1.0 / FlowNum) * \
+                    np.dot(np.dot(U_1[0, j, :], H_1), U_1[0, j, :])
+        t_2 = (1.0 / sqrt(FlowNum)) * np.dot(G_2, U_2[0, j, :]) + \
+                (1.0 / 2) * (1.0 / FlowNum) * \
+                    np.dot(np.dot(U_2[0, j, :], H_2), U_2[0, j, :])
+        t_3 = (1.0 / sqrt(FlowNum)) * np.dot(G_3, U_3[0, j, :]) + \
+                (1.0 / 2) * (1.0 / FlowNum) * \
+                    np.dot(np.dot(U_3[0, j, :], H_3), U_3[0, j, :])
+	t1 = np.array(t_1.real)[0]
+	t2 = np.array(t_2.real)[0]
+	t3 = np.array(t_3.real)[0]
+        # print t.tolist()
+        # break
+        KL.append(min([t1, t2, t3]))
+    eta = prctile(KL, 100 * (1 - beta))
+    # print(KL)
+    # assert(1 == 2)
+    return eta
+
 def ChainGen(N):
     # Get the initial distribution mu_0
     mu_0 = mu_ini(N**2)
@@ -449,7 +485,7 @@ class ThresActual(ThresBase):
         eta = prctile(self.KL, 100 * (1 - self.beta))
         return eta
 
-class ThresUeakConv(ThresBase):
+class ThresWeakConv(ThresBase):
     """ Estimating the K-L divergence and threshold by use of weak convergence
     """
     def ThresCal(self):
@@ -461,4 +497,41 @@ class ThresSanov(ThresBase):
     """
     def ThresCal(self):
         eta = - log(self.beta) / self.n
+        return eta
+
+class ThresBaseRobust(object):
+    def __init__(self, N, beta, n, mu_01, mu_1, mu_11, P_11, G_11, \
+		       H_11, U_11, mu_02, mu_2, mu_12, P_12, G_12, \
+		       H_12, U_12, mu_03, mu_3, mu_13, P_13, G_13, \
+		       H_13, U_13):
+        self.N = N  # N is the row dimension of the original transition matrix Q
+        self.beta = beta  # beta is the false alarm rate
+        self.n = n  # n is the number of samples
+        self.mu_01 = mu_01
+        self.mu_1 = mu_1
+	self.mu_11 = mu_11
+	self.P_11 = P_11
+	self.G_11 = G_11
+	self.H_11 = H_11
+	self.U_11 = U_11
+	self.mu_02 = mu_02
+	self.mu_2 = mu_2
+	self.mu_12 = mu_12
+	self.P_12 = P_12
+	self.G_12 = G_12
+	self.H_12 = H_12
+	self.U_12 = U_12
+	self.mu_03 = mu_03
+	self.mu_3 = mu_3
+	self.mu_13 = mu_13
+	self.P_13 = P_13
+	self.G_13 = G_13
+	self.H_13 = H_13
+	self.U_13 = U_13
+
+class ThresWeakConvRobust(ThresBaseRobust):
+    """ Estimating the K-L divergence and threshold by use of weak convergence
+    """
+    def ThresCal(self):
+        eta = HoeffdingRuleMarkovRobust(self.beta, self.G_11, self.H_11, self.U_11, self.G_12, self.H_12, self.U_12, self.G_13, self.H_13, self.U_13, self.n)
         return eta
