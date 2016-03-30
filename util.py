@@ -334,8 +334,8 @@ def Sigma_est(P, mu):
     D = np.diag(D)
     Q, R = LA.qr(V)
     for i in range(0, N**2):
-        if D[i, i] < 0:
-            D[i, i] = 0
+        if D[i, i] < 1e-20:
+            D[i, i] = 1e-20
     Sigma = np.dot(np.dot(Q, D), LA.inv(Q))
     return Sigma
 
