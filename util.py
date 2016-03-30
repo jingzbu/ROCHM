@@ -103,6 +103,26 @@ def chain(mu_0, Q, n):
 
     return x
 
+def mu_adjust(mu):
+    """
+    adjust mu such that each entry is positive
+    mu: N * N
+    """
+    N, _ = mu.shape
+    assert(N == _)
+    
+    eps = 1e-12
+    
+    for i in range(N):
+        for j in range(N):
+            if mu[i, j] < eps:
+                mu[i, j] = eps
+    sum_ = sum(sum(mu))
+    # print(sum_)
+    mu = mu / sum_
+
+    return mu
+
 def probability_matrix_Q(dimQ):
     """
     Randomly generate the original transition matrix Q
@@ -414,6 +434,34 @@ def HoeffdingRuleMarkovRobust(beta, G_1, H_1, U_1, G_2, H_2, U_2, G_3, H_3, U_3,
     eta = prctile(KL, 100 * (1 - beta))
     # print(KL)
     # assert(1 == 2)
+    return eta
+
+def HoeffdingRuleMarkovRobust_(beta, G_list, H_list, U_list, FlowNum):
+    """
+    Estimate the K-L divergence and the threshold by use of weak convergence
+    ----------------
+    beta: the false alarm rate
+    G: the gradient
+    H: the Hessian
+    U: a sample path of the Gaussian empirical measure
+    FlowNum: the number of flows
+    ----------------
+    """
+    _, SampNum, _ = U_list[0].shape
+
+    # Estimate K-L divergence using 2nd-order Taylor expansion
+    KL = []
+    KL_est_list = []
+    for j in range(0, SampNum):
+        for G, H, U in zip(G_list, H_list, U_list):
+            KL_est = (1.0 / sqrt(FlowNum)) * np.dot(G, U[0, j, :]) + \
+                     (1.0 / 2) * (1.0 / FlowNum) * \
+                      np.dot(np.dot(U[0, j, :], H), U[0, j, :])
+            KL_est = np.array(KL_est.real)[0]
+            KL_est_list.append(KL_est)
+        KL.append(min(KL_est_list))
+    eta = prctile(KL, 100 * (1 - beta))
+
     return eta
 
 def ChainGen(N):
