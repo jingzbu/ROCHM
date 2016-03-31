@@ -448,11 +448,13 @@ def HoeffdingRuleMarkovRobust_(beta, G_list, H_list, U_list, FlowNum):
     ----------------
     """
     _, SampNum, _ = U_list[0].shape
+    # print(SampNum)
+    # assert(1 == 2)
 
     # Estimate K-L divergence using 2nd-order Taylor expansion
     KL = []
-    KL_est_list = []
     for j in range(0, SampNum):
+	KL_est_list = []
         for G, H, U in zip(G_list, H_list, U_list):
             KL_est = (1.0 / sqrt(FlowNum)) * np.dot(G, U[0, j, :]) + \
                      (1.0 / 2) * (1.0 / FlowNum) * \
@@ -506,6 +508,51 @@ def ChainGen(N):
 
     return mu_0, mu, mu_1, P, G_1, H_1, U_1
 
+def ChainGen_(mu_inp):
+    
+    N, _ = np.shape(mu_inp)
+    assert(N == _)
+    
+    # Get the initial distribution mu_0
+    mu_0 = np.reshape(mu_inp, N**2)
+
+    # Get the original transition matrix Q
+    Q = Q_est(mu_inp)
+
+    # Get the new transition matrix P
+    P = P_est(Q)
+
+    # Get the actual stationary distribution mu; 1 x (N**2)
+    PP = LA.matrix_power(P, 1000)
+    mu = PP[0, :]
+
+    # Get a sample path of the Markov chain with length n_1; this path is used to estimate the stationary distribution
+    n_1 = 1000 * N * N  # the length of a sample path
+    x_1 = chain(mu_0, P, n_1)
+
+    # Get the estimated stationary distribution mu_1
+    mu_1 = mu_est(x_1, N)
+
+    # Get the estimate of Q
+    Q_1 = Q_est(mu_1)
+
+    # Get the estimate of P
+    P_1 = P_est(Q_1)
+
+    # Get the estimate of the gradient
+    G_1 = G_est(Q_1)
+
+    # Get the estimate of the Hessian
+    H_1 = H_est(mu_1)
+
+    # Get the estimate of the covariance matrix
+    Sigma_1 = Sigma_est(P_1, mu_1)
+
+    # Get an estimated sample path of U
+    SampNum = 1000
+    U_1 = U_est(Sigma_1, SampNum)
+
+    return mu_0, mu, mu_1, P, G_1, H_1, U_1
 
 class ThresBase(object):
     def __init__(self, N, beta, n, mu_0, mu, mu_1, P, G_1, H_1, U_1):
