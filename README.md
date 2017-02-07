@@ -1,5 +1,5 @@
 # ROM
-ROC analysis for Hoeffding test under Markovian assumption
+ROC analysis for Hoeffding test under Markovian assumptions
 
 Author
 =============
