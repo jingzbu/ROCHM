@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-""" A library of utility functions
+""" A library of utility functions that will be used by Simulator
 """
 from __future__ import absolute_import, division
 
@@ -7,45 +7,24 @@ __author__ = "Jing Zhang"
 __email__ = "jingzbu@gmail.com"
 __status__ = "Development"
 
+import argparse
 import numpy as np
 from numpy import linalg as LA
 from math import sqrt, log
+from scipy.stats import chi2
 from matplotlib.mlab import prctile
+import matplotlib.pyplot as plt
+import pylab
+from pylab import *
 import statsmodels.api as sm  # recommended import according to the docs
+import json
 
-
-# Data Storage and Load
-# These two functions "zdump" and "zload" were written by Jing Wang
-# cf. https://github.com/hbhzwj/GAD/blob/master/gad/util/util.py
-
-try:
-    import cPickle as pickle
-except ImportError:
-    import pickle
-import gzip
-proto = pickle.HIGHEST_PROTOCOL
-
-def zdump(obj, f_name):
-    f = gzip.open(f_name,'wb', proto)
-    pickle.dump(obj,f)
-    f.close()
-
-def zload(f_name):
-    f = gzip.open(f_name,'rb', proto)
-    obj = pickle.load(f)
-    f.close()
-    return obj
-
-def dump(obj, f_name):
-    f = open(f_name,'wb', proto)
-    pickle.dump(obj,f)
-    f.close()
-
-def load(f_name):
-    f = open(f_name,'rb', proto)
-    obj = pickle.load(f)
-    f.close()
-    return obj
+def count_one(x):
+    s = 0
+    for idx in range(len(x)):
+        if x[idx] == 1:
+            s += 1
+    return s, len(x) - s
 
 def rand_x(p):
     """
@@ -60,7 +39,6 @@ def rand_x(p):
         x.append(rand_x(p))
     print x
     ----------------
-
     [1, 1, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 0]
     """
     p = np.array(p)
@@ -102,26 +80,6 @@ def chain(mu_0, Q, n):
        x[i+1] = rand_x(Q[x[i], :])
 
     return x
-
-def mu_adjust(mu):
-    """
-    adjust mu such that each entry is positive
-    mu: N * N
-    """
-    N, _ = mu.shape
-    assert(N == _)
-    
-    eps = 1e-12
-    
-    for i in range(N):
-        for j in range(N):
-            if mu[i, j] < eps:
-                mu[i, j] = eps
-    sum_ = sum(sum(mu))
-    # print(sum_)
-    mu = mu / sum_
-
-    return mu
 
 def probability_matrix_Q(dimQ):
     """
@@ -354,117 +312,91 @@ def Sigma_est(P, mu):
     D = np.diag(D)
     Q, R = LA.qr(V)
     for i in range(0, N**2):
-        if D[i, i] < 1e-20:
-            D[i, i] = 1e-20
+        if D[i, i] < 0:
+            D[i, i] = 0
     Sigma = np.dot(np.dot(Q, D), LA.inv(Q))
     return Sigma
 
-def U_est(Sigma, SampNum):
+def W_est(Sigma, SampNum):
     """
-    Generate samples of the Gaussian random vector U
+    Generate samples of W
     ----------------
     Sigma: the covariance matrix; an N x N matrix
     SampNum: the length of the sample path
     """
     N, _ = Sigma.shape
     assert(N == _)
-    U_mean = np.zeros((1, N))
-    U = np.random.multivariate_normal(U_mean[0, :], Sigma, (1, SampNum))
+    W_mean = np.zeros((1, N))
+    W = np.random.multivariate_normal(W_mean[0, :], Sigma, (1, SampNum))
 
-    return U
+    return W
 
-def HoeffdingRuleMarkov(beta, G, H, U, FlowNum):
+def EigCalc(H, Sigma):
+	"""
+	Calculate eigenvalues for the purpose of "chi-square" approximation
+	:param H: the Hessian
+	:param Sigma: the estimated covariance matrix
+	:return: the eigenvalues of (diag(mu))^(-1) * Sigma
+	"""
+	# print np.shape(H)
+	# print np.shape(Sigma)
+	# assert 1 == 2
+
+	rho = LA.eigvalsh(np.dot(H, Sigma))
+	# print mu
+	# print Sigma
+	# print muVec
+	# print np.shape(mu)
+	# print np.shape(Sigma)
+	# print np.diag(muVec)
+	# print rho
+	# assert 1 == 2
+	# print mean(rho)
+	return rho
+
+def ChiSampEst(rho, SampNum):
+	N = len(rho)
+	s_dict = {}
+	for i in xrange(N):
+		s_dict[i] = np.random.normal(0, 1, SampNum)
+	return [sum([rho[i] * (s_dict[i][idx] ** 2) for i in xrange(N)]) for idx in xrange(SampNum)]
+
+def HoeffdingRuleMarkov(beta, rho, G, H, W, Chi, FlowNum):
     """
     Estimate the K-L divergence and the threshold by use of weak convergence
     ----------------
     beta: the false alarm rate
+    mu: the stationary distribution 
     G: the gradient
     H: the Hessian
-    U: a sample path of the Gaussian empirical measure
+    Sigma: the covariance matrix
+    W: a sample path of the Gaussian empirical measure
+    Chi: a sample path of the "Chi-Square" estimation
     FlowNum: the number of flows
     ----------------
     """
-    _, SampNum, _ = U.shape
+    _, SampNum, N = W.shape  # Here, N equals the number of states in the new chain Z
 
     # Estimate K-L divergence using 2nd-order Taylor expansion
-    KL = []
+    KL_1 = []
     for j in range(0, SampNum):
-        t = (1.0 / sqrt(FlowNum)) * np.dot(G, U[0, j, :]) + \
+        t = (1.0 / sqrt(FlowNum)) * np.dot(G, W[0, j, :]) + \
                 (1.0 / 2) * (1.0 / FlowNum) * \
-                    np.dot(np.dot(U[0, j, :], H), U[0, j, :])
+                    np.dot(np.dot(W[0, j, :], H), W[0, j, :])
         # print t.tolist()
         # break
-        KL.append(np.array(t.real)[0])
-    eta = prctile(KL, 100 * (1 - beta))
+        KL_1.append(np.array(t.real)[0])
+    # Get the threshold
+    eta1 = prctile(KL_1, 100 * (1 - beta))
+    KL_2 = [Chi[idx] / (2 * FlowNum) for idx in xrange(len(Chi))]
+    # Using the simplified formula
+    # eta2 = 1.0 / (2 * FlowNum) * rho * chi2.ppf(1 - beta, N)
+    eta2 = prctile(KL_2, 100 * (1 - beta))
+    # print N
+
     # print(KL)
     # assert(1 == 2)
-    return eta
-
-def HoeffdingRuleMarkovRobust(beta, G_1, H_1, U_1, G_2, H_2, U_2, G_3, H_3, U_3, FlowNum):
-    """
-    Estimate the K-L divergence and the threshold by use of weak convergence
-    ----------------
-    beta: the false alarm rate
-    G: the gradient
-    H: the Hessian
-    U: a sample path of the Gaussian empirical measure
-    FlowNum: the number of flows
-    ----------------
-    """
-    _, SampNum, _ = U_1.shape
-
-    # Estimate K-L divergence using 2nd-order Taylor expansion
-    KL = []
-    for j in range(0, SampNum):
-        t_1 = (1.0 / sqrt(FlowNum)) * np.dot(G_1, U_1[0, j, :]) + \
-                (1.0 / 2) * (1.0 / FlowNum) * \
-                    np.dot(np.dot(U_1[0, j, :], H_1), U_1[0, j, :])
-        t_2 = (1.0 / sqrt(FlowNum)) * np.dot(G_2, U_2[0, j, :]) + \
-                (1.0 / 2) * (1.0 / FlowNum) * \
-                    np.dot(np.dot(U_2[0, j, :], H_2), U_2[0, j, :])
-        t_3 = (1.0 / sqrt(FlowNum)) * np.dot(G_3, U_3[0, j, :]) + \
-                (1.0 / 2) * (1.0 / FlowNum) * \
-                    np.dot(np.dot(U_3[0, j, :], H_3), U_3[0, j, :])
-	t1 = np.array(t_1.real)[0]
-	t2 = np.array(t_2.real)[0]
-	t3 = np.array(t_3.real)[0]
-        # print t.tolist()
-        # break
-        KL.append(min([t1, t2, t3]))
-    eta = prctile(KL, 100 * (1 - beta))
-    # print(KL)
-    # assert(1 == 2)
-    return eta
-
-def HoeffdingRuleMarkovRobust_(beta, G_list, H_list, U_list, FlowNum):
-    """
-    Estimate the K-L divergence and the threshold by use of weak convergence
-    ----------------
-    beta: the false alarm rate
-    G: the gradient
-    H: the Hessian
-    U: a sample path of the Gaussian empirical measure
-    FlowNum: the number of flows
-    ----------------
-    """
-    _, SampNum, _ = U_list[0].shape
-    # print(SampNum)
-    # assert(1 == 2)
-
-    # Estimate K-L divergence using 2nd-order Taylor expansion
-    KL = []
-    for j in range(0, SampNum):
-	KL_est_list = []
-        for G, H, U in zip(G_list, H_list, U_list):
-            KL_est = (1.0 / sqrt(FlowNum)) * np.dot(G, U[0, j, :]) + \
-                     (1.0 / 2) * (1.0 / FlowNum) * \
-                      np.dot(np.dot(U[0, j, :], H), U[0, j, :])
-            KL_est = np.array(KL_est.real)[0]
-            KL_est_list.append(KL_est)
-        KL.append(min(KL_est_list))
-    eta = prctile(KL, 100 * (1 - beta))
-
-    return eta
+    return KL_1, KL_2, eta1, eta2
 
 def ChainGen(N):
     # Get the initial distribution mu_0
@@ -502,61 +434,21 @@ def ChainGen(N):
     # Get the estimate of the covariance matrix
     Sigma_1 = Sigma_est(P_1, mu_1)
 
-    # Get an estimated sample path of U
+    # Get an estimated sample path of W
     SampNum = 1000
-    U_1 = U_est(Sigma_1, SampNum)
+    W_1 = W_est(Sigma_1, SampNum)
 
-    return mu_0, mu, mu_1, P, G_1, H_1, U_1
+    rho_1 = EigCalc(H_1, Sigma_1)
 
-def ChainGen_(mu_inp):
-    
-    N, _ = np.shape(mu_inp)
-    assert(N == _)
-    
-    # Get the initial distribution mu_0
-    mu_0 = np.reshape(mu_inp, N**2)
+    Chi_1 = ChiSampEst(rho_1, SampNum)
 
-    # Get the original transition matrix Q
-    Q = Q_est(mu_inp)
+    return mu_0, mu, mu_1, P, G_1, H_1, Sigma_1, W_1, rho_1, Chi_1
 
-    # Get the new transition matrix P
-    P = P_est(Q)
-
-    # Get the actual stationary distribution mu; 1 x (N**2)
-    PP = LA.matrix_power(P, 1000)
-    mu = PP[0, :]
-
-    # Get a sample path of the Markov chain with length n_1; this path is used to estimate the stationary distribution
-    n_1 = 1000 * N * N  # the length of a sample path
-    x_1 = chain(mu_0, P, n_1)
-
-    # Get the estimated stationary distribution mu_1
-    mu_1 = mu_est(x_1, N)
-
-    # Get the estimate of Q
-    Q_1 = Q_est(mu_1)
-
-    # Get the estimate of P
-    P_1 = P_est(Q_1)
-
-    # Get the estimate of the gradient
-    G_1 = G_est(Q_1)
-
-    # Get the estimate of the Hessian
-    H_1 = H_est(mu_1)
-
-    # Get the estimate of the covariance matrix
-    Sigma_1 = Sigma_est(P_1, mu_1)
-
-    # Get an estimated sample path of U
-    SampNum = 1000
-    U_1 = U_est(Sigma_1, SampNum)
-
-    return mu_0, mu, mu_1, P, G_1, H_1, U_1
 
 class ThresBase(object):
-    def __init__(self, N, beta, n, mu_0, mu, mu_1, P, G_1, H_1, U_1):
+    def __init__(self, N, beta, rho_1, n, mu_0, mu, mu_1, P, G_1, H_1, Sigma_1, W_1, Chi_1):
         self.N = N  # N is the row dimension of the original transition matrix Q
+        self.rho_1 = rho_1
         self.beta = beta  # beta is the false alarm rate
         self.n = n  # n is the number of samples
         self.mu_0 = mu_0
@@ -565,68 +457,41 @@ class ThresBase(object):
         self.P = P
         self.G_1 = G_1
         self.H_1 = H_1
-        self.U_1 = U_1
+        self.Sigma_1 = Sigma_1
+        self.W_1 = W_1
+        self.Chi_1 = Chi_1
 
 class ThresActual(ThresBase):
     """ Computing the actual (theoretical) K-L divergence and threshold
     """
     def ThresCal(self):
         SampNum = 1000
-        KL = []
+        self.KL = []
         for i in range(0, SampNum):
             x = chain(self.mu_0, self.P, self.n)
             mu = np.reshape(self.mu, (self.N, self.N))
-            KL.append(KL_est(x, mu))  # Get the actual relative entropy (K-L divergence)
-        eta = prctile(self.KL, 100 * (1 - self.beta))
-        return eta
+            self.KL.append(KL_est(x, mu))  # Get the actual relative entropy (K-L divergence)
+        self.eta = prctile(self.KL, 100 * (1 - self.beta))
+        KL = self.KL
+        eta = self.eta
+        return KL, eta
 
 class ThresWeakConv(ThresBase):
     """ Estimating the K-L divergence and threshold by use of weak convergence
     """
     def ThresCal(self):
-        eta = HoeffdingRuleMarkov(self.beta, self.G_1, self.H_1, self.U_1, self.n)
-        return eta
+        self.KL_1, self.KL_2, self.eta1, self.eta2 = HoeffdingRuleMarkov(self.beta, self.rho_1, self.G_1, self.H_1, \
+                                                                         self.W_1, self.Chi_1, self.n)
+        KL_1 = self.KL_1
+        KL_2 = self.KL_2
+        eta1 = self.eta1
+        eta2 = self.eta2
+        return KL_1, KL_2, eta1, eta2
 
 class ThresSanov(ThresBase):
     """ Estimating the threshold by use of Sanov's theorem
     """
     def ThresCal(self):
-        eta = - log(self.beta) / self.n
-        return eta
-
-class ThresBaseRobust(object):
-    def __init__(self, N, beta, n, mu_01, mu_1, mu_11, P_11, G_11, \
-		       H_11, U_11, mu_02, mu_2, mu_12, P_12, G_12, \
-		       H_12, U_12, mu_03, mu_3, mu_13, P_13, G_13, \
-		       H_13, U_13):
-        self.N = N  # N is the row dimension of the original transition matrix Q
-        self.beta = beta  # beta is the false alarm rate
-        self.n = n  # n is the number of samples
-        self.mu_01 = mu_01
-        self.mu_1 = mu_1
-	self.mu_11 = mu_11
-	self.P_11 = P_11
-	self.G_11 = G_11
-	self.H_11 = H_11
-	self.U_11 = U_11
-	self.mu_02 = mu_02
-	self.mu_2 = mu_2
-	self.mu_12 = mu_12
-	self.P_12 = P_12
-	self.G_12 = G_12
-	self.H_12 = H_12
-	self.U_12 = U_12
-	self.mu_03 = mu_03
-	self.mu_3 = mu_3
-	self.mu_13 = mu_13
-	self.P_13 = P_13
-	self.G_13 = G_13
-	self.H_13 = H_13
-	self.U_13 = U_13
-
-class ThresWeakConvRobust(ThresBaseRobust):
-    """ Estimating the K-L divergence and threshold by use of weak convergence
-    """
-    def ThresCal(self):
-        eta = HoeffdingRuleMarkovRobust(self.beta, self.G_11, self.H_11, self.U_11, self.G_12, self.H_12, self.U_12, self.G_13, self.H_13, self.U_13, self.n)
+        self.eta = - log(self.beta) / self.n
+        eta = self.eta
         return eta
