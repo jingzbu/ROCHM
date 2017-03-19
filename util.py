@@ -19,6 +19,8 @@ from pylab import *
 import statsmodels.api as sm  # recommended import according to the docs
 import json
 
+np.random.seed(20173)
+
 def count_one(x):
     s = 0
     for idx in range(len(x)):
@@ -77,7 +79,7 @@ def chain(mu_0, Q, n):
     x = [0] * n
     x[0] = rand_x(mu_0)
     for i in range(1, n-1):
-       x[i+1] = rand_x(Q[x[i], :])
+        x[i+1] = rand_x(Q[x[i], :])
 
     return x
 
