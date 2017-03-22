@@ -3,7 +3,7 @@ ROC analysis for Hoeffding test under Markovian assumptions
 
 ### Related publication:
 
-Jing Zhang and Ioannis Ch. Paschalidis, "***Statistical Anomaly Detection via Composite Hypothesis Testing for Markov Models***," IEEE Transactions on Signal Processing, under a major revision. [arXiv:1702.08435](https://arxiv.org/abs/arXiv:1702.08435)
+Jing Zhang and Ioannis Ch. Paschalidis, "***Statistical Anomaly Detection via Composite Hypothesis Testing for Markov Models***," IEEE Transactions on Signal Processing, under a major revision. [arXiv:1702.08435](https://arxiv.org/abs/1702.08435)
 
 
 Author
