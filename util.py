@@ -19,7 +19,7 @@ from pylab import *
 import statsmodels.api as sm  # recommended import according to the docs
 import json
 
-np.random.seed(20173)
+np.random.seed(2017)
 
 def count_one(x):
     s = 0
